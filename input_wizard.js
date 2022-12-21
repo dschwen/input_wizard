@@ -311,9 +311,14 @@ class DemoWizard extends InputWizard {
 }
 
 var global_slider = new Slider('global', { description: 'Global parameter', min: 10, max: 30, value: 20 });
-var bc_slider = new Slider('bcval', { description: 'Dirichlet BC Value', min: 0, max: 1, value: 0.5, step: 0.1 });
-var bc2_slider = new Slider('bcval2', { description: 'Neumann BC Value', min: 0, max: 1, value: 0, step: 0.1 });
-var boundary_select = new Select('boundary', { description: 'Which boundary to apply the BC to', options: ['top', 'bottom', 'right'] });
+
+var boundary_select = new Select('boundary', { description: 'Which boundary to apply the temperature to', options: ['top', 'bottom', 'right'] });
+var temperature_value = new Slider('temperature', { description: 'Temperature to apply [K]', min: 300, max: 1200, value: 400 });
+
+var flux_value = new Slider('bcval2', { description: 'Heat flux density value [W/m^2]', min: 0, max: 100, value: 0 });
+
+var ic_slider = new Slider('bcval', { description: 'Initial Temperature value [K]', min: 200, max: 500, value: 300 });
+
 
 var wizard = new DemoWizard('demo_form', {
   description: "Demonstration wizard",
@@ -333,33 +338,35 @@ var wizard = new DemoWizard('demo_form', {
     []
   []
   `,
-    new BlockToggle("bc", { "description": "Apply a Dirichlet boundary condition", "selected": false }, [
+    new BlockToggle("bc", {
+      "description": "Apply a constant Temperature", "selected": false
+    }, [
       `
   [BCs]
     [my_bc]
       type = DirichletBC
       variable = u
       boundary = `, boundary_select, `
-      value = 0
+      value = `, temperature_value, `
     []`,
-      new BlockToggle("bc2", { "description": "Additional boundary condition", "selected": false, "change": (widget) => { widget.find("pp").state = widget.state; } }, [
+      new BlockToggle("bc2", { "description": "Additionaly apply a constant flux on the left", "selected": false, "change": (widget) => { widget.find("pp").state = widget.state; } }, [
         `
     [additional_bc]
       type = NeumannBC
       variable = u
       boundary = left
-      value = `, bc2_slider, `
+      value = `, flux_value, `
     []`])
       ,
       `
   []
   `]),
-    new BlockToggle("ic", { "description": "Constant initial condition", "selected": true }, [`
+    new BlockToggle("ic", { "description": "Set an initial temperature value", "selected": true }, [`
   [ICs]
     [my_bc]
       type = ConstantIC
       variable = u
-      value = `, bc_slider, `
+      value = `, ic_slider, `
     []
   []
   `]),
