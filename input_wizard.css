@@ -1,0 +1,23 @@
+div.wizard {
+  width: 45%;
+  float: left;
+}
+
+div.widget {
+  border: 1px solid lightgray;
+  padding: 1em 1em 1em 3em;
+  margin: 1em;
+}
+
+#inputtext {
+  width: 45%;
+  float: right;
+}
+
+div.widget>label>input {
+  margin-right: 1em;
+}
+
+div.widget>label>select {
+  margin-right: 1em;
+}
