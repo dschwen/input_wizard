@@ -45,6 +45,18 @@ class Widget {
     }
   }
 
+  find(name) {
+    return this.wizard.findInternal(name);
+  }
+
+  findInternal(name) {
+    if (name === this.name) {
+      return this;
+    } else {
+      return undefined;
+    }
+  }
+
   getParam(name) {
     if (name in this.parameters) {
       return this.parameters[name];
@@ -55,6 +67,11 @@ class Widget {
     }
   }
 
+  // puts a frame around the widget dom node
+  frame(node) {
+    return $('<div class="widget"/>').append(node);
+  }
+
   build() {
     throw new Error("Must override `build` method.");
   }
@@ -63,13 +80,27 @@ class Widget {
     throw new Error("Must override `emit` method.");
   }
 
+  update() {
+    if (this.changeHandler) {
+      this.changeHandler(this);
+    }
+  }
+
+  register(wizard) {
+    this.wizard = wizard;
+  }
+
   constructor(name, parameters, /* internal */ inputParameters = {}) {
     this.name = name;
     this.parameters = parameters;
     this.inputParameters = Widget.setParams(inputParameters, {
-      "description": undefined
+      "description": undefined,
+      "change": null
     });
-    this.validateParameters()
+    this.validateParameters();
+
+    this.description = this.getParam("description");
+    this.changeHandler = this.getParam("change");
   }
 }
 
@@ -77,7 +108,39 @@ class WidgetContainer extends Widget {
   constructor(name, parameters, subwidgets, /* internal */ inputParameters = {}) {
     super(name, parameters, Widget.setParams(inputParameters, {}));
     this.subwidgets = subwidgets;
-    this.hassubcontrols = Widget.containsWidgets(subwidgets);
+    this.hassuboptions = Widget.containsWidgets(subwidgets);
+  }
+
+  findInternal(name) {
+    if (name === this.name) {
+      return this;
+    } else {
+      for (var widget of this.subwidgets) {
+        if (widget instanceof Widget) {
+          var found = widget.findInternal(name);
+          if (found) { return found; }
+        }
+      }
+      return undefined;
+    }
+  }
+
+  forSubwidgets(apply) {
+    for (var widget of this.subwidgets) {
+      if (widget instanceof Widget) {
+        apply(widget);
+      }
+    }
+  }
+
+  buildSubwidgets() {
+    var list = [];
+    this.forSubwidgets((widget) => { list.push(widget.build()); });
+    return list;
+  }
+
+  build() {
+    return this.frame(this.buildSubwidgets());
   }
 
   emit() {
@@ -87,9 +150,19 @@ class WidgetContainer extends Widget {
     }
     return text;
   }
+
+  update() {
+    super.update();
+    this.forSubwidgets((widget) => { widget.update(); });
+  }
+
+  register(wizard) {
+    super.register(wizard);
+    this.forSubwidgets((widget) => { widget.register(wizard); });
+  }
 }
 
-class BlockToggle extends WidgetContainer {
+class HiddenBlockToggle extends WidgetContainer {
   constructor(name, parameters, subwidgets, /* internal */ inputParameters = {}) {
     // set up inputParameters
     super(name, parameters, subwidgets, Widget.setParams(inputParameters, {
@@ -97,20 +170,45 @@ class BlockToggle extends WidgetContainer {
     }));
 
     this.state = this.getParam("selected");
-    this.description = this.getParam("description");
   }
 
   build() {
-    var check = $('<input />', { type: 'checkbox' })
-      .prop('checked', this.state)
-      .on("change", (e) => {
-        this.state = e.target.checked;
-      })
-    return $('<label/>').append(check).append(this.description);
+    return undefined;
   }
 
   emit() {
     return this.state ? super.emit() : '';
+  }
+}
+
+class BlockToggle extends HiddenBlockToggle {
+  constructor(name, parameters, subwidgets, /* internal */ inputParameters = {}) {
+    // set up inputParameters
+    super(name, parameters, subwidgets, Widget.setParams(inputParameters, {}));
+  }
+
+  build() {
+    this.suboptions = $('<span/>').append(this.buildSubwidgets());
+    console.log(this.name, this.suboptions);
+
+    var updateVisibility = () => {
+      if (this.state) {
+        this.suboptions.show(100);
+      } else {
+        this.suboptions.hide(100);
+      }
+    }
+
+    var check = $('<input />', { type: 'checkbox' })
+      .prop('checked', this.state)
+      .on("change", (e) => {
+        this.state = e.target.checked;
+        updateVisibility();
+      });
+    var label = $('<label/>').append(check).append(this.description);
+    updateVisibility();
+
+    return this.frame([label, this.suboptions]);
   }
 }
 
@@ -128,7 +226,6 @@ class Slider extends Widget {
     this.min = this.getParam("min");
     this.max = this.getParam("max");
     this.step = this.getParam("step");
-    this.description = this.getParam("description");
   }
 
   build() {
@@ -136,7 +233,7 @@ class Slider extends Widget {
       .on("change", (e) => {
         this.value = $(e.target).val();
       })
-    return $('<label/>').append(slider).append(this.description);
+    return this.frame($('<label/>').append(slider).append(this.description));
   }
 
   emit() {
@@ -144,11 +241,39 @@ class Slider extends Widget {
   }
 }
 
+class Select extends Widget {
+  constructor(name, parameters, /* internal */ inputParameters = {}) {
+    // set up inputParameters
+    super(name, parameters, Widget.setParams(inputParameters, {
+      "options": undefined,
+      "default": 0
+    }));
+
+    this.options = this.getParam("options");
+    this.index = this.getParam("default");
+  }
+
+  build() {
+    var select = $('<select />').on("change", (e) => {
+      this.index = $(e.target).val();
+    })
+    for (var item in this.options) {
+      var option = $('<option/>', { value: item }).text(this.options[item]);
+      select.append(option);
+    }
+    return this.frame($('<label/>').append(select).append(this.description));
+  }
+
+  emit() {
+    return this.options[this.index];
+  }
+}
+
 
 
 class InputWizard extends WidgetContainer {
   updateText() {
-    console.log(this.emit());
+    console.log('InputWizard', this.emit());
   }
 
   constructor(name, parameters, subwidgets, /* internal */ inputParameters = {}) {
@@ -158,13 +283,16 @@ class InputWizard extends WidgetContainer {
 
     // construct the HTML for all widgets
     this.form_node = this.getParam("form_node");
-    this.form_node.append(super.build());
+    this.form_node.append(this.build());
 
     // register an update handler for all widgets
-    this.form_node.on("change", () => { this.updateText(); });
+    this.form_node.on("change", () => { this.update(); this.updateText(); });
+
+    // register all contained widgets to the wizard
+    this.register(this);
 
     // render initial input
-    window.setTimeout(() => { this.updateText(); }, 0);
+    window.setTimeout(() => { this.update(); this.updateText(); }, 0);
   }
 }
 
@@ -182,14 +310,19 @@ class DemoWizard extends InputWizard {
   }
 }
 
+var global_slider = new Slider('global', { description: 'Global parameter', min: 10, max: 30, value: 20 });
+var bc_slider = new Slider('bcval', { description: 'Dirichlet BC Value', min: 0, max: 1, value: 0.5, step: 0.1 });
+var bc2_slider = new Slider('bcval2', { description: 'Neumann BC Value', min: 0, max: 1, value: 0, step: 0.1 });
+var boundary_select = new Select('boundary', { description: 'Which boundary to apply the BC to', options: ['top', 'bottom', 'right'] });
+
 var wizard = new DemoWizard('demo_form', {
   description: "Demonstration wizard",
-  form_node: $('body'),
+  form_node: $('#wizard'),
   textarea_node: $('#inputtext')
 },
   [
     `
-  global = `, new Slider('global', { description: 'Global parameter', min: 10, max: 30, value: 20 }), `
+  global = `, global_slider, `
 
   [Mesh]
     file = myfile.e
@@ -206,8 +339,19 @@ var wizard = new DemoWizard('demo_form', {
     [my_bc]
       type = DirichletBC
       variable = u
+      boundary = `, boundary_select, `
       value = 0
-    []
+    []`,
+      new BlockToggle("bc2", { "description": "Additional boundary condition", "selected": false, "change": (widget) => { widget.find("pp").state = widget.state; } }, [
+        `
+    [additional_bc]
+      type = NeumannBC
+      variable = u
+      boundary = left
+      value = `, bc2_slider, `
+    []`])
+      ,
+      `
   []
   `]),
     new BlockToggle("ic", { "description": "Constant initial condition", "selected": true }, [`
@@ -215,7 +359,7 @@ var wizard = new DemoWizard('demo_form', {
     [my_bc]
       type = ConstantIC
       variable = u
-      value = `, new Slider('bcval', { description: 'BC Value', min: 00, max: 1, value: 0.1 }), `
+      value = `, bc_slider, `
     []
   []
   `]),
@@ -223,42 +367,15 @@ var wizard = new DemoWizard('demo_form', {
   [Executioner]
     type = Steady
   []
-  `
+  `,
+    new HiddenBlockToggle("pp", { "description": "Postprocessor that is conditional on a different block toggle" }, [
+      `
+  [PostProcessors]
+    [area]
+      type = AreaPostprocessor
+      boundary = surface
+    []
+  []
+    `
+    ])
   ]);
-
-// var wizard = new DemoWizard($('body'), [
-//   `
-//   [Mesh]
-//   file = myfile.e
-//   []
-
-//   [Variables]
-//   [u]
-//   []
-//   []
-//   `,
-//   new BlockToggle("bc", { "description": "Apply a Dirichlet boundary condition", "selected": false }, [`
-//   [BCs]
-//   [my_bc]
-//   type = DirichletBC
-//   variable = u
-//   value = 0
-//   []
-//   []
-//   `]),
-//   new BlockToggle("ic", { "description": "Constant initial condition", "selected": true }, [`
-//   [ICs]
-//   [my_bc]
-//   type = ConstantIC
-//   variable = u
-//   value = `, new Slider('bcval', { description: '' }), `
-//   []
-//   []
-//   `]),
-//   `
-//   [Executioner]
-//   type = Steady
-//   []
-//   `
-// ]);
-
